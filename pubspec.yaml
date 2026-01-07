@@ -1,0 +1,53 @@
+name: ferimetria # A projekt belső neve, erre hivatkoznak az importálásoknál
+description: "Motoros Ferimetria." # Rövid leírás arról, hogy mi is ez az app (Motoros Ferimetria)
+publish_to: 'none' # Megakadályozza, hogy véletlenül publikáld a kódot a pub.dev-re
+version: 1.0.0+1 # Az app verziószáma. Az első rész (1.0.0) a felhasználónak látszik, 
+                 # a második (+1) a belső build szám (frissítésnél ezt kell növelni)
+environment:
+  sdk: ^3.10.3 # Meghatározza, hogy melyik Dart SDK verzióval kompatibilis a kód
+dependencies: # Itt soroljuk fel a külső "tudástárakat" (pluginokat), amiket az app használ
+  # Alap Flutter keretrendszer
+  flutter:
+    sdk: flutter
+  # Gyorsulásmérő és giroszkóp adataihoz (döntésméréshez kell majd)
+  sensors_plus: ^6.1.1
+  # A kamera kezeléséhez (élőkép és felvétel)
+  camera: ^0.11.0+2
+  # Megakadályozza, hogy a telefon képernyője kikapcsoljon használat közben
+  wakelock_plus: ^1.2.8
+  # GPS koordináták és sebesség lekéréséhez (ez felelős a sebességmérésért)
+  geolocator: ^13.0.1
+  # Segít megtalálni a telefonon azokat a mappákat, ahová menteni szabad
+  path_provider: ^2.1.2
+  # Jogosultságok kezelése (kamera, GPS engedélyek elkérése a júzertől)
+  permission_handler: ^11.3.1
+  # Galéria kezelése: ezzel mentjük el a kész képeket/videókat a fotók közé
+  gal: ^2.3.2
+  # Egyszerű adatok (pl. beállítások) elmentése a telefonra, amik újraindítás után is megmaradnak
+  shared_preferences: ^2.2.2
+  # A térkép megjelenítéséért felelős fő motor (OpenStreetMap alapú)
+  flutter_map: ^6.1.0
+  # Matematikai segédlet a koordinátákhoz (távolságszámítás, pontok elhelyezése)
+  latlong2: ^0.9.1
+  # iOS stílusú ikonok készlete (néha a Material mellett ebből is merítünk)
+  cupertino_icons: ^1.0.8
+  # Képernyőtartalom rögzítése (ezzel próbáltuk korábban a HUD-ot videóra venni)
+  flutter_screen_recording: ^2.0.24
+
+dev_dependencies: # Fejlesztés közben használt eszközök (a végleges appba nem kerülnek bele)
+  # Tesztelési keretrendszer
+  flutter_test:
+    sdk: flutter
+  # Segít betartani a tiszta kódolási szabályokat (figyelmeztet, ha csúnyán írunk)
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter: # Flutter specifikus beállítások
+  uses-material-design: true # Bekapcsolja a Google Material Design rendszerét (gombok, betűtípusok, ikonok)
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/app_icon.png" # Ide mutasson az ikonod elérési útja
+  adaptive_icon_background: "#1A1A1A" # Androidon a háttér színe (például sötétszürke)
+  adaptive_icon_foreground: "assets/app_icon.png" # Android "lebegő" ikonja
