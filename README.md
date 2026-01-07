@@ -45,10 +45,14 @@ Ha szeretnéd saját magadnak buildelni az appot:
     ```bash
     flutter run --release
 
-📸 Képernyőképek
+---
+
+## 📸 Képernyőképek
 
 
-📝 Licenc
+---
+
+## 📝 Licenc
 Saját projekt - Minden jog fenntartva.
 
 Készítette: Ferenc Kiss - 2025
