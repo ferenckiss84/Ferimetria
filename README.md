@@ -36,3 +36,19 @@ Ha szeretnéd saját magadnak buildelni az appot:
 1. **Klónozd a tárolót:**
    ```bash
    git clone [https://github.com/ferenckiss84/Ferimetria.git](https://github.com/ferenckiss84/Ferimetria.git)
+
+2. Szerezd be a függőségeket:
+    ```bash
+    flutter pub get
+
+3. Futtasd az alkalmazást:
+    ```bash
+    flutter run --release
+
+📸 Képernyőképek
+
+
+📝 Licenc
+Saját projekt - Minden jog fenntartva.
+
+Készítette: Ferenc Kiss - 2025
