@@ -1,7 +1,7 @@
 name: ferimetria # A projekt belső neve, erre hivatkoznak az importálásoknál
 description: "Motoros Ferimetria." # Rövid leírás arról, hogy mi is ez az app (Motoros Ferimetria)
 publish_to: 'none' # Megakadályozza, hogy véletlenül publikáld a kódot a pub.dev-re
-version: 1.0.0+1 # Az app verziószáma. Az első rész (1.0.0) a felhasználónak látszik, 
+version: 1.0.0+2 # Az app verziószáma. Az első rész (1.0.0) a felhasználónak látszik, 
                  # a második (+1) a belső build szám (frissítésnél ezt kell növelni)
 environment:
   sdk: ^3.10.3 # Meghatározza, hogy melyik Dart SDK verzióval kompatibilis a kód
