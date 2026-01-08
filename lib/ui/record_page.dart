@@ -22,7 +22,8 @@ class RecordPage extends StatefulWidget {
   State<RecordPage> createState() => _RecordPageState();
 }
 
-class _RecordPageState extends State<RecordPage> {
+// TickerProviderStateMixin hozzáadva az animációk kezeléséhez
+class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   final GPSService _gps = GPSService();
   final IMUService _imu = IMUService();
   final CameraService _cam = CameraService();
@@ -54,6 +55,46 @@ class _RecordPageState extends State<RecordPage> {
 
   final MapController _mapController = MapController();
   LatLng _currentLocation = const LatLng(48.09602773224442, 20.759517641576668);
+
+  // --- Térkép simítási logika ---
+  void _animatedMapMove(LatLng destLocation, double destZoom) {
+    // Animáció indítása a jelenlegi helyzetből a cél felé
+    final latTween = Tween<double>(
+      begin: _mapController.camera.center.latitude,
+      end: destLocation.latitude,
+    );
+    final lngTween = Tween<double>(
+      begin: _mapController.camera.center.longitude,
+      end: destLocation.longitude,
+    );
+    final zoomTween = Tween<double>(
+      begin: _mapController.camera.zoom,
+      end: destZoom,
+    );
+
+    // 1000ms (1 mp) alatt úszik át, igazodva a GPS frissítési üteméhez
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    final animation = CurvedAnimation(parent: controller, curve: Curves.linear);
+
+    controller.addListener(() {
+      _mapController.move(
+        LatLng(latTween.evaluate(animation), lngTween.evaluate(animation)),
+        zoomTween.evaluate(animation),
+      );
+    });
+
+    animation.addStatusListener((status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        controller.dispose();
+      }
+    });
+
+    controller.forward();
+  }
 
   @override
   void initState() {
@@ -139,7 +180,8 @@ class _RecordPageState extends State<RecordPage> {
           _hasGpsSignal = true;
           _currentLocation = newPos;
         });
-        _mapController.move(newPos, _currentSpeed < 60 ? 17.0 : 15.0);
+        // Sima térképmozgatás hívása a közvetlen ugrás helyett
+        _animatedMapMove(newPos, _currentSpeed < 60 ? 17.0 : 15.0);
       });
     });
   }
@@ -472,20 +514,32 @@ class _RecordPageState extends State<RecordPage> {
               ),
             ),
           ),
+          // HUD Overlay rajzolása animált sebességgel
           Positioned(
             bottom: 30,
             left: 0,
             right: 0,
             height: MediaQuery.of(context).size.height * 0.7,
-            child: CustomPaint(
-              painter: OverlayPainter(
-                speed: _currentSpeed,
-                gForce: gForce,
-                leanDeg: lean,
-                maxLeanLeft: _maxLeanLeft,
-                maxLeanRight: _maxLeanRight,
-                displayMode: _displayMode,
-              ),
+            child: TweenAnimationBuilder<double>(
+              // Az animáció a régi sebesség és az új sebesség között zajlik
+              tween: Tween<double>(begin: 0, end: _currentSpeed),
+              // 300ms-os időtartam a folyamatos mozgásért
+              duration: const Duration(milliseconds: 300),
+              // Kisimított görbe a természetesebb gyorsulás/lassulás látványához
+              curve: Curves.easeOut,
+              builder: (context, animatedSpeed, child) {
+                return CustomPaint(
+                  painter: OverlayPainter(
+                    // Az animált értéket adjuk át a rajzolónak a nyers _currentSpeed helyett
+                    speed: animatedSpeed,
+                    gForce: gForce,
+                    leanDeg: lean,
+                    maxLeanLeft: _maxLeanLeft,
+                    maxLeanRight: _maxLeanRight,
+                    displayMode: _displayMode,
+                  ),
+                );
+              },
             ),
           ),
 

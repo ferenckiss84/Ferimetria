@@ -301,7 +301,7 @@ class OverlayPainter extends CustomPainter {
       }
     }
 
-    // Sebesség mutató
+    // Sebesség mutató - A kapott (már animált) sebesség érték használata
     final double speedNeedleAngle =
         speedArcStartRad +
         (speed.clamp(0, maxSpeed) / maxSpeed) * speedArcSweepRad;
@@ -316,7 +316,7 @@ class OverlayPainter extends CustomPainter {
         ..strokeWidth = 3,
     );
 
-    // Digitális sebesség kijelzés a kör közepén
+    // Digitális sebesség kijelzés a kör közepén (animált érték kerekítve)
     _drawText(
       canvas,
       "${speed.round()}",
@@ -381,6 +381,7 @@ class OverlayPainter extends CustomPainter {
       }
     }
 
+    // Sebesség mutató a skálán (animált érték alapján)
     final double speedAngle =
         startAngle + (speed.clamp(0, maxSpeed) / maxSpeed) * fullSweep;
     canvas.drawLine(
@@ -395,6 +396,7 @@ class OverlayPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
+    // Nagy digitális sebesség középen
     _drawText(
       canvas,
       "${speed.round()} KM/H",
@@ -427,13 +429,38 @@ class OverlayPainter extends CustomPainter {
     );
   }
 
-  // DŐLÉSTŐL FÜGGŐ SZÍN MEGHATÁROZÁSA
+  /*   // DŐLÉSTŐL FÜGGŐ SZÍN MEGHATÁROZÁSA
   Color _getLeanColor(double lean) {
     final double absL = lean.abs();
     if (absL < 10) return Colors.green; // 10 fok alatt biztonságos zöld
     if (absL < 25) return Colors.yellow; // 25 fokig sárga
     if (absL < 40) return Colors.orange; // 40 fokig narancs
     return Colors.red; // Felette piros
+  } */
+
+  // DŐLÉSTŐL FÜGGŐ SZÍN MEGHATÁROZÁSA - ÁTMENETTEL
+  Color _getLeanColor(double lean) {
+    final double absL = lean.abs();
+
+    if (absL <= 10) {
+      // 10 fok alatt fixen zöld
+      return Colors.green;
+    } else if (absL <= 25) {
+      // Átmenet Zöldből Sárgába (10-25 fok között)
+      double t = (absL - 10) / (25 - 10);
+      return Color.lerp(Colors.green, Colors.yellow, t)!;
+    } else if (absL <= 40) {
+      // Átmenet Sárgából Narancsba (25-40 fok között)
+      double t = (absL - 25) / (40 - 25);
+      return Color.lerp(Colors.yellow, Colors.orange, t)!;
+    } else if (absL <= 50) {
+      // Átmenet Narancsból Pirosba (40-50 fok között)
+      double t = (absL - 40) / (50 - 40);
+      return Color.lerp(Colors.orange, Colors.red, t)!;
+    } else {
+      // 50 fok felett fixen piros
+      return Colors.red;
+    }
   }
 
   // SEGÉDFÜGGVÉNY SZÖVEG RAJZOLÁSÁHOZ
