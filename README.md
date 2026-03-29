@@ -1,4 +1,16 @@
-# 🏍️ Ferimetria v1.0
+# 🏍️ v1.1
+
+- **Fekvő mód:** Új fekvő UI.
+
+# 🏍️ v1.0
+
+- **Valós idejű sebességmérés:** Precíz, GPS-alapú sebességkijelzés (km/h).
+- **Interaktív térkép:** Beépített OpenStreetMap integráció, amely mutatja az aktuális pozíciódat.
+- **Dinamikus HUD:** Sötét, kontrasztos felület, amely nappal és éjszaka is jól olvasható.
+- **Telemetria rögzítés:** (Folyamatban) Sebesség, dőlésszög és útvonal adatok követése.
+- **Képernyőfelvétel:** Beépített funkció az út és az adatok egyidejű rögzítéséhez (Android 14+ támogatással).
+
+# 🏍️ Ferimetria
 
 A **Ferimetria** egy modern, Flutter-alapú motoros HUD (Heads-Up Display) és telemetria alkalmazás. Célja, hogy a motorozás élményét adatokkal és vizuális visszajelzésekkel tegye teljessé, miközben biztonságos és átlátható felületet nyújt az úton.
 
@@ -11,7 +23,6 @@ A **Ferimetria** egy modern, Flutter-alapú motoros HUD (Heads-Up Display) és t
 - **Dinamikus HUD:** Sötét, kontrasztos felület, amely nappal és éjszaka is jól olvasható.
 - **Telemetria rögzítés:** (Folyamatban) Sebesség, dőlésszög és útvonal adatok követése.
 - **Képernyőfelvétel:** Beépített funkció az út és az adatok egyidejű rögzítéséhez (Android 14+ támogatással).
-- **Egyedi ikon:** Professzionális, motoros tematikájú alkalmazásikon.
 
 ---
 
