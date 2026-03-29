@@ -22,10 +22,7 @@ class GPSService {
   final _controller = StreamController<GPSData>.broadcast();
   Stream<GPSData> get stream => _controller.stream;
 
-  // Waze-szerű simításhoz szükséges változók
-  double _currentSpeed = 0.0;
-  final List<double> _speedBuffer = []; // Az utolsó 5 mérés tárolása
-  static const int _bufferSize = 5;
+  double _smoothedSpeed = 0.0;
 
   Future<Stream<GPSData>> start() async {
     LocationPermission permission = await Geolocator.checkPermission();
@@ -34,8 +31,7 @@ class GPSService {
     }
 
     final locationSettings = AndroidSettings(
-      accuracy: LocationAccuracy
-          .bestForNavigation, // Ez használja a belső hardveres szűrőket
+      accuracy: LocationAccuracy.bestForNavigation,
       distanceFilter: 0,
       intervalDuration: const Duration(milliseconds: 100),
       foregroundNotificationConfig: const ForegroundNotificationConfig(
@@ -45,48 +41,38 @@ class GPSService {
       ),
     );
 
-    _positionSub = Geolocator.getPositionStream(locationSettings: locationSettings).listen((
-      Position pos,
-    ) {
-      // 1. Nyers adat lekérése
-      double rawSpeed = pos.speed * 3.6;
+    _positionSub =
+        Geolocator.getPositionStream(
+          locationSettings: locationSettings,
+        ).listen((Position pos) {
+          double rawSpeed = pos.speed * 3.6;
 
-      // 2. Pontosság alapú szűrés (A Waze is ezt csinálja)
-      // Ha a GPS pontossága rosszabb mint 15 méter, ne higgyünk a hirtelen ugrásoknak
-      if (pos.accuracy > 15.0 && (rawSpeed - _currentSpeed).abs() > 20) {
-        rawSpeed = _currentSpeed;
-      }
+          if (rawSpeed < 0) rawSpeed = 0.0;
 
-      // 3. Mozgóátlag (Sima kijelzésért)
-      _speedBuffer.add(rawSpeed);
-      if (_speedBuffer.length > _bufferSize) {
-        _speedBuffer.removeAt(0);
-      }
+          if (pos.accuracy > 15.0 && (rawSpeed - _smoothedSpeed).abs() > 20) {
+            rawSpeed = _smoothedSpeed;
+          }
 
-      // Kiszámoljuk az átlagot
-      double averageSpeed =
-          _speedBuffer.reduce((a, b) => a + b) / _speedBuffer.length;
+          if (rawSpeed < 2.0) {
+            rawSpeed = 0.0;
+          }
 
-      // 4. "Zajkapu" álló helyzethez
-      // Ha az átlag 1.5 km/h alatt van, tekintsük fix 0-nak (kiszűri a szobai ugrálást)
-      if (averageSpeed < 1.5) {
-        averageSpeed = 0.0;
-        _speedBuffer
-            .clear(); // Ha megálltunk, ürítsük a puffert a gyors újrainduláshoz
-      }
+          final double delta = (rawSpeed - _smoothedSpeed).abs();
+          final double alpha = delta > 10.0 ? 0.8 : 0.25;
+          _smoothedSpeed = (alpha * rawSpeed) + ((1 - alpha) * _smoothedSpeed);
 
-      _currentSpeed = averageSpeed;
+          if (_smoothedSpeed < 0.5) _smoothedSpeed = 0.0;
 
-      _controller.add(
-        GPSData(
-          speed: _currentSpeed,
-          altitude: pos.altitude,
-          heading: pos.heading,
-          lat: pos.latitude,
-          lon: pos.longitude,
-        ),
-      );
-    });
+          _controller.add(
+            GPSData(
+              speed: _smoothedSpeed,
+              altitude: pos.altitude,
+              heading: pos.heading,
+              lat: pos.latitude,
+              lon: pos.longitude,
+            ),
+          );
+        });
 
     return _controller.stream;
   }
@@ -94,7 +80,6 @@ class GPSService {
   void stop() {
     _positionSub?.cancel();
     _positionSub = null;
-    _speedBuffer.clear();
-    _currentSpeed = 0.0;
+    _smoothedSpeed = 0.0;
   }
 }

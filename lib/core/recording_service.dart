@@ -11,10 +11,8 @@ class RecordingService {
     if (_isRecording) return false;
 
     try {
-      // Várunk egy kicsit az indítás előtt, hogy a rendszer "kiürüljön"
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 1500));
 
-      // Az S24-en a plugin stabilabb, ha NINCS kiterjesztés a névben
       bool started = await FlutterScreenRecording.startRecordScreen(
         fileName,
         titleNotification: "",
@@ -36,19 +34,16 @@ class RecordingService {
     if (!_isRecording) return null;
 
     try {
-      // Kell egy kis idő a MediaRecorder-nek, hogy lezárja a fájlt
       await Future.delayed(const Duration(milliseconds: 1000));
 
       String path = await FlutterScreenRecording.stopRecordScreen;
       _isRecording = false;
 
       if (path.isNotEmpty) {
-        // Várunk egy picit, hogy a fájlrendszer szinkronizáljon
         await Future.delayed(const Duration(milliseconds: 500));
         File videoFile = File(path);
 
         if (await videoFile.exists()) {
-          // Csak akkor mentünk, ha van benne adat
           if (await videoFile.length() > 0) {
             await Gal.putVideo(path, album: "Ferimetria");
             debugPrint("Sikeres mentés: $path");

@@ -12,6 +12,7 @@ import '../../core/gps_service.dart';
 import '../../core/imu_service.dart';
 import '../../core/camera_service.dart';
 import '../features/recording/overlay_painter.dart';
+import '../features/recording/landscape_overlay_painter.dart';
 import '../../core/constants.dart';
 import '../../core/recording_service.dart';
 
@@ -22,7 +23,6 @@ class RecordPage extends StatefulWidget {
   State<RecordPage> createState() => _RecordPageState();
 }
 
-// TickerProviderStateMixin hozzáadva az animációk kezeléséhez
 class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   final GPSService _gps = GPSService();
   final IMUService _imu = IMUService();
@@ -43,22 +43,21 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   bool isRecordingMode = false;
   bool isProcessing = false;
 
+  bool _isLandscapeMode = false;
+
   Timer? _countdownTimer;
   int _countdownValue = 10;
   int _startDelay = 10;
   int _displayMode = 0;
   bool _isCountingDown = false;
 
-  // Csak a szűrt, hátlapi kamerák listája
   List<CameraDescription> _backCameras = [];
   int _selectedCameraIndex = 0;
 
   final MapController _mapController = MapController();
   LatLng _currentLocation = const LatLng(48.09602773224442, 20.759517641576668);
 
-  // --- Térkép simítási logika ---
   void _animatedMapMove(LatLng destLocation, double destZoom) {
-    // Animáció indítása a jelenlegi helyzetből a cél felé
     final latTween = Tween<double>(
       begin: _mapController.camera.center.latitude,
       end: destLocation.latitude,
@@ -72,12 +71,14 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
       end: destZoom,
     );
 
-    // 1000ms (1 mp) alatt úszik át, igazodva a GPS frissítési üteméhez
     final controller = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 800),
       vsync: this,
     );
-    final animation = CurvedAnimation(parent: controller, curve: Curves.linear);
+    final animation = CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeInOut,
+    );
 
     controller.addListener(() {
       _mapController.move(
@@ -100,8 +101,14 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     WakelockPlus.enable();
+    _setImmersiveMode();
     _loadSettings();
     initAll();
+  }
+
+  // IMMERSIVE MODE - navigációs sáv elrejtése
+  void _setImmersiveMode() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   Future<void> _loadSettings() async {
@@ -110,7 +117,9 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
       _startDelay = prefs.getInt('startDelay') ?? 10;
       _displayMode = prefs.getInt('displayMode') ?? 0;
       _selectedCameraIndex = prefs.getInt('selectedCameraIndex') ?? 0;
+      _isLandscapeMode = prefs.getBool('isLandscapeMode') ?? false;
     });
+    _applyOrientation();
   }
 
   Future<void> _saveSettings(String key, int value) async {
@@ -123,28 +132,37 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     });
   }
 
+  Future<void> _toggleLandscapeMode(bool landscape) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLandscapeMode', landscape);
+    setState(() => _isLandscapeMode = landscape);
+    _applyOrientation();
+    // Immersive mode újra beállítása orientáció váltás után
+    Future.delayed(const Duration(milliseconds: 300), _setImmersiveMode);
+  }
+
+  void _applyOrientation() {
+    if (_isLandscapeMode) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    }
+  }
+
   Future<void> initAll() async {
     try {
-      // Összes kamera lekérése
       final allCameras = await availableCameras();
-
-      // SZŰRÉS: Csak a hátlapi kamerákat tartjuk meg
       _backCameras = allCameras
           .where((cam) => cam.lensDirection == CameraLensDirection.back)
           .toList();
-
-      if (_backCameras.isEmpty) {
-        // Ha valamiért nincs hátlapi kamera, fallback az összesre
-        _backCameras = allCameras;
-      }
-
-      // Ellenőrizzük, hogy a mentett index érvényes-e a szűrt listában
+      if (_backCameras.isEmpty) _backCameras = allCameras;
       if (_selectedCameraIndex >= _backCameras.length) {
         _selectedCameraIndex = 0;
       }
-
       await _cam.init(cameraDescription: _backCameras[_selectedCameraIndex]);
-
       if (!mounted) return;
       if (_cam.controller?.value.isInitialized ?? false) {
         setState(() => camReady = true);
@@ -161,7 +179,9 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() {
         gForce = imuData.gForce;
-        lean = imuData.roll;
+        // Fekvő módban a roll tengely 90 fokkal el van tolva
+        // ezért a pitch értéket használjuk dőlésszögként
+        lean = _isLandscapeMode ? imuData.x : imuData.roll;
         final clampedRoll = lean.clamp(-maxLeanAngleLimit, maxLeanAngleLimit);
         if (clampedRoll < -2) {
           _maxLeanLeft = math.max(_maxLeanLeft, clampedRoll.abs());
@@ -180,7 +200,6 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
           _hasGpsSignal = true;
           _currentLocation = newPos;
         });
-        // Sima térképmozgatás hívása a közvetlen ugrás helyett
         _animatedMapMove(newPos, _currentSpeed < 60 ? 17.0 : 15.0);
       });
     });
@@ -199,17 +218,13 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
             itemCount: _backCameras.length,
             itemBuilder: (context, index) {
               final isSelected = _selectedCameraIndex == index;
-
-              // Megnevezések csak a hátlapi listához igazítva
               String label = "Kamera #$index";
               IconData icon = Icons.photo_camera;
-
               if (index == 0) label = "Fő kamera";
               if (index == 1) {
                 label = "Ultraszéles";
                 icon = Icons.zoom_out_map;
               }
-
               return ListTile(
                 leading: Icon(
                   icon,
@@ -242,27 +257,17 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
 
     String name = "Ferimetria_video_${getFormattedDate()}";
     bool success = await _recordingService.start(name);
-
-    if (success) {
-      setState(() => isRecordingMode = true);
-    } else {
-      // Ha a felhasználó "Mégse"-t nyom az Android engedélykérő ablakban
-      setState(() => isRecordingMode = false);
-    }
+    setState(() => isRecordingMode = success);
   }
 
   Future<void> _stopScreenRecording() async {
     setState(() => isProcessing = true);
-
     String? savedPath = await _recordingService.stop();
-
     if (!mounted) return;
-
     setState(() {
       isRecordingMode = false;
       isProcessing = false;
     });
-
     if (savedPath != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -358,10 +363,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
         HapticFeedback.lightImpact();
       } else {
         timer.cancel();
-        setState(() {
-          _isCountingDown = false;
-          // A tényleges service indítás állítja be az isRecordingMode-ot true-ra
-        });
+        setState(() => _isCountingDown = false);
         _startScreenRecording();
         HapticFeedback.heavyImpact();
       }
@@ -391,338 +393,497 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     }
 
     final previewSize = _cam.controller!.value.previewSize!;
-    final previewRatio = previewSize.height / previewSize.width;
+    // Fekvő módban a ratio fordított!
+    final double previewRatio = _isLandscapeMode
+        ? previewSize.width / previewSize.height
+        : previewSize.height / previewSize.width;
 
     return Scaffold(
       backgroundColor: Colors.black,
-      drawer: Drawer(
-        backgroundColor: Colors.black.withValues(alpha: 0.95),
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(
-                color: Color(0xFF1A1A1A),
-                border: Border(
-                  bottom: BorderSide(color: Colors.blueAccent, width: 2),
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.motorcycle,
-                    color: Colors.blueAccent,
-                    size: 40,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "FERIMETRIA",
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.dashboard, color: Colors.white),
-              title: const Text(
-                "Kijelző típusa",
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showDisplayModeDialog();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt, color: Colors.white),
-              title: const Text(
-                "Kamera kiválasztása",
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                "${_selectedCameraIndex + 1}/${_backCameras.length}",
-                style: const TextStyle(color: Colors.white70),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showCameraSelectionDialog();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer, color: Colors.white),
-              title: const Text(
-                "Időzítő",
-                style: TextStyle(color: Colors.white),
-              ),
-              subtitle: Text(
-                "$_startDelay mp",
-                style: const TextStyle(color: Colors.white70),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showDelayDialog();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.fiber_manual_record, color: Colors.red),
-              title: const Text(
-                "Felvétel indítása",
-                style: TextStyle(color: Colors.white),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _startRecordingSequence();
-              },
-            ),
-          ],
-        ),
-      ),
-      body: Stack(
+      drawer: _buildDrawer(),
+      body: _isLandscapeMode
+          ? _buildLandscapeBody(previewRatio)
+          : _buildPortraitBody(previewRatio),
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: Colors.black.withValues(alpha: 0.95),
+      child: ListView(
+        padding: EdgeInsets.zero,
         children: [
-          Center(
-            child: AspectRatio(
-              aspectRatio: previewRatio,
-              child: CameraPreview(_cam.controller!),
-            ),
-          ),
-          // --- FEKETE TAKARÓSÁV A FELSŐ IKONOK MÖGÉ ---
-          Positioned(
-            top: -50,
-            left: 0,
-            right: 0,
-            height:
-                140, // Ezt állítsd be úgy, hogy teljesen elfedje a piros részt
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(
-                      alpha: 0.9,
-                    ), // Felül majdnem teljesen fekete
-                    Colors.black.withValues(alpha: 0.5), // Középen áttetszőbb
-                    Colors.transparent, // Az alja pedig eltűnik
-                  ],
-                ),
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              color: Color(0xFF1A1A1A),
+              border: Border(
+                bottom: BorderSide(color: Colors.blueAccent, width: 2),
               ),
             ),
-          ),
-          // HUD Overlay rajzolása animált sebességgel
-          Positioned(
-            bottom: 30,
-            left: 0,
-            right: 0,
-            height: MediaQuery.of(context).size.height * 0.7,
-            child: TweenAnimationBuilder<double>(
-              // Az animáció a régi sebesség és az új sebesség között zajlik
-              tween: Tween<double>(begin: 0, end: _currentSpeed),
-              // 300ms-os időtartam a folyamatos mozgásért
-              duration: const Duration(milliseconds: 300),
-              // Kisimított görbe a természetesebb gyorsulás/lassulás látványához
-              curve: Curves.easeOut,
-              builder: (context, animatedSpeed, child) {
-                return CustomPaint(
-                  painter: OverlayPainter(
-                    // Az animált értéket adjuk át a rajzolónak a nyers _currentSpeed helyett
-                    speed: animatedSpeed,
-                    gForce: gForce,
-                    leanDeg: lean,
-                    maxLeanLeft: _maxLeanLeft,
-                    maxLeanRight: _maxLeanRight,
-                    displayMode: _displayMode,
-                  ),
-                );
-              },
-            ),
-          ),
-
-          // FEHÉR/ÁTLÁTSZÓ STOP GOMB - CSAK FELVÉTEL ALATT LÁTSZIK
-          if (isRecordingMode)
-            Positioned(
-              right: 20,
-              // A 0.7-es magasságú CustomPaint közepe (sebességmérő síkja)
-              bottom: (MediaQuery.of(context).size.height * 0.7) / 2 + 10,
-              child: GestureDetector(
-                onTap: _stopScreenRecording,
-                child: Container(
-                  width: 65,
-                  height: 65,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.15),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.stop, color: Colors.white, size: 35),
-                ),
-              ),
-            ),
-
-          Positioned(
-            top: 25,
-            left: 15,
-            child: Builder(
-              builder: (context) => IconButton(
-                icon: const Icon(Icons.menu, color: Colors.white, size: 30),
-                onPressed: () => Scaffold.of(context).openDrawer(),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 34,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Icon(
-                _hasGpsSignal ? Icons.gps_fixed : Icons.gps_off,
-                color: _hasGpsSignal ? Colors.greenAccent : Colors.white30,
-                size: 30,
-              ),
-            ),
-          ),
-          Positioned(
-            top: 25,
-            right: 15,
-            child: Row(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                FloatingActionButton(
-                  mini: true,
-                  heroTag: "reset_vals",
-                  backgroundColor: Colors.black45,
-                  onPressed: () {
-                    HapticFeedback.mediumImpact();
-                    _imu.calibrate();
-                    setState(() {
-                      _maxLeanLeft = 0.0;
-                      _maxLeanRight = 0.0;
-                    });
-                  },
-                  child: const Icon(Icons.refresh, color: Colors.white),
+                const Icon(
+                  Icons.motorcycle,
+                  color: Colors.blueAccent,
+                  size: 40,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "FERIMETRIA",
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                  ),
                 ),
               ],
             ),
           ),
+          ListTile(
+            leading: Icon(
+              _isLandscapeMode
+                  ? Icons.stay_current_landscape
+                  : Icons.stay_current_portrait,
+              color: Colors.blueAccent,
+            ),
+            title: Text(
+              _isLandscapeMode ? "Váltás: Álló mód" : "Váltás: Fekvő mód",
+              style: const TextStyle(color: Colors.white),
+            ),
+            subtitle: Text(
+              _isLandscapeMode ? "Jelenleg: Fekvő" : "Jelenleg: Álló",
+              style: const TextStyle(color: Colors.white54),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _toggleLandscapeMode(!_isLandscapeMode);
+            },
+          ),
+          const Divider(color: Colors.white12),
+          ListTile(
+            leading: const Icon(Icons.dashboard, color: Colors.white),
+            title: const Text(
+              "Kijelző típusa",
+              style: TextStyle(color: Colors.white),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _showDisplayModeDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt, color: Colors.white),
+            title: const Text(
+              "Kamera kiválasztása",
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: Text(
+              "${_selectedCameraIndex + 1}/${_backCameras.length}",
+              style: const TextStyle(color: Colors.white70),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _showCameraSelectionDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.timer, color: Colors.white),
+            title: const Text("Időzítő", style: TextStyle(color: Colors.white)),
+            subtitle: Text(
+              "$_startDelay mp",
+              style: const TextStyle(color: Colors.white70),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _showDelayDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.fiber_manual_record, color: Colors.red),
+            title: const Text(
+              "Felvétel indítása",
+              style: TextStyle(color: Colors.white),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _startRecordingSequence();
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
-          Positioned(
-            top: 75,
-            right: 5,
-            child: Container(
-              width: 110,
-              height: 110,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white38, width: 1.5),
-                boxShadow: const [
-                  BoxShadow(color: Colors.black45, blurRadius: 5),
+  Widget _buildPortraitBody(double previewRatio) {
+    return Stack(
+      children: [
+        Center(
+          child: AspectRatio(
+            aspectRatio: previewRatio,
+            child: CameraPreview(_cam.controller!),
+          ),
+        ),
+        Positioned(
+          top: -50,
+          left: 0,
+          right: 0,
+          height: 140,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.9),
+                  Colors.black.withValues(alpha: 0.5),
+                  Colors.transparent,
                 ],
-              ),
-              child: ClipOval(
-                child: FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: _currentLocation,
-                    initialZoom: 15.0,
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.ferimetria.app',
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: _currentLocation,
-                          width: 12,
-                          height: 12,
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
               ),
             ),
           ),
-          if (_isCountingDown)
-            Container(
-              color: Colors.black87,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      "INDÍTÁS",
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 24,
-                        letterSpacing: 4,
-                      ),
-                    ),
-                    Text(
-                      "$_countdownValue",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 160,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 30,
-                          vertical: 15,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                      onPressed: _cancelCountdown,
-                      icon: const Icon(Icons.close),
-                      label: const Text(
-                        "MÉGSE",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
+        ),
+        Positioned(
+          bottom: 30,
+          left: 0,
+          right: 0,
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: _currentSpeed),
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            builder: (context, animatedSpeed, child) {
+              return CustomPaint(
+                painter: OverlayPainter(
+                  speed: animatedSpeed,
+                  gForce: gForce,
+                  leanDeg: lean,
+                  maxLeanLeft: _maxLeanLeft,
+                  maxLeanRight: _maxLeanRight,
+                  displayMode: _displayMode,
+                ),
+              );
+            },
+          ),
+        ),
+        /* if (isRecordingMode)
+          Positioned(
+            right: 15,
+            bottom: (MediaQuery.of(context).size.height * 0.7) / 2 + 10,
+            child: GestureDetector(
+              onTap: _stopScreenRecording,
+              child: _buildStopButton(),
+            ),
+          ), */
+        Positioned(
+          right: 15,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: GestureDetector(
+              onTap: _startRecordingSequence,
+              child: isRecordingMode
+                  ? _buildStopButton()
+                  : _buildRecordButton(),
+            ),
+          ),
+        ),
+        if (_isCountingDown) _buildCountdownOverlay(),
+        if (isProcessing) _buildProcessingOverlay(),
+        Positioned(
+          top: 25,
+          left: 15,
+          child: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white, size: 30),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+        ),
+        Positioned(
+          top: 34,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: Icon(
+              _hasGpsSignal ? Icons.gps_fixed : Icons.gps_off,
+              color: _hasGpsSignal ? Colors.greenAccent : Colors.white30,
+              size: 30,
+            ),
+          ),
+        ),
+        Positioned(
+          top: 25,
+          right: 15,
+          child: FloatingActionButton(
+            mini: true,
+            heroTag: "reset_vals_portrait",
+            backgroundColor: Colors.black45,
+            onPressed: () {
+              HapticFeedback.mediumImpact();
+              _imu.calibrate();
+              setState(() {
+                _maxLeanLeft = 0.0;
+                _maxLeanRight = 0.0;
+              });
+            },
+            child: const Icon(Icons.refresh, color: Colors.white),
+          ),
+        ),
+        Positioned(top: 75, right: 5, child: _buildMapWidget()),
+        if (_isCountingDown) _buildCountdownOverlay(),
+        if (isProcessing) _buildProcessingOverlay(),
+      ],
+    );
+  }
+
+  Widget _buildLandscapeBody(double previewRatio) {
+    return Stack(
+      children: [
+        // Kamera preview - teljes képernyő fekvő módban
+        Positioned.fill(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _cam.controller!.value.previewSize!.width,
+              height: _cam.controller!.value.previewSize!.height,
+              child: CameraPreview(_cam.controller!),
+            ),
+          ),
+        ),
+        // Felső gradient
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 80,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.85),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+        // Landscape HUD overlay
+        Positioned.fill(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: _currentSpeed),
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            builder: (context, animatedSpeed, child) {
+              return CustomPaint(
+                painter: LandscapeOverlayPainter(
+                  speed: animatedSpeed,
+                  leanDeg: lean,
+                  maxLeanLeft: _maxLeanLeft,
+                  maxLeanRight: _maxLeanRight,
+                ),
+              );
+            },
+          ),
+        ),
+        // BAL FELSŐ - menü gomb
+        Positioned(
+          top: 10,
+          left: 10,
+          child: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+        ),
+        // GPS ikon
+        Positioned(
+          top: 18,
+          left: 60,
+          child: Icon(
+            _hasGpsSignal ? Icons.gps_fixed : Icons.gps_off,
+            color: _hasGpsSignal ? Colors.greenAccent : Colors.white30,
+            size: 24,
+          ),
+        ),
+        // Reset gomb
+        Positioned(
+          top: 10,
+          left: 100,
+          child: FloatingActionButton(
+            mini: true,
+            heroTag: "reset_vals_landscape",
+            backgroundColor: Colors.black45,
+            onPressed: () {
+              HapticFeedback.mediumImpact();
+              _imu.calibrate();
+              setState(() {
+                _maxLeanLeft = 0.0;
+                _maxLeanRight = 0.0;
+              });
+            },
+            child: const Icon(Icons.refresh, color: Colors.white, size: 18),
+          ),
+        ),
+        // JOBB FENT - térkép
+        Positioned(top: 10, right: 10, child: _buildMapWidget()),
+        // JOBB OLDALT KÖZÉPEN - record / stop gomb
+        Positioned(
+          right: 15,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: GestureDetector(
+              onTap: _startRecordingSequence,
+              child: isRecordingMode
+                  ? _buildStopButton()
+                  : _buildRecordButton(),
+            ),
+          ),
+        ),
+        if (_isCountingDown) _buildCountdownOverlay(),
+        if (isProcessing) _buildProcessingOverlay(),
+      ],
+    );
+  }
+
+  Widget _buildMapWidget() {
+    return Container(
+      width: 110,
+      height: 110,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white38, width: 1.5),
+        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 5)],
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipOval(
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _currentLocation,
+                initialZoom: 15.0,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.ferimetria.app',
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: Colors.red,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.5),
+              boxShadow: const [
+                BoxShadow(color: Colors.black54, blurRadius: 4),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStopButton() {
+    return Container(
+      width: 65,
+      height: 65,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withValues(alpha: 0.15),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.4),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
+        ],
+      ),
+      child: const Icon(Icons.stop, color: Colors.white, size: 35),
+    );
+  }
+
+  Widget _buildRecordButton() {
+    return Container(
+      width: 65,
+      height: 65,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.red.withValues(alpha: 0.20),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.6), width: 2),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
+        ],
+      ),
+      child: const Icon(Icons.fiber_manual_record, color: Colors.red, size: 35),
+    );
+  }
+
+  Widget _buildCountdownOverlay() {
+    return Container(
+      color: Colors.black87,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              "INDÍTÁS",
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 24,
+                letterSpacing: 4,
+              ),
+            ),
+            Text(
+              "$_countdownValue",
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 160,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 30,
+                  vertical: 15,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
                 ),
               ),
-            ),
-          // PROCESSING OVERLAY
-          if (isProcessing)
-            Container(
-              color: Colors.black54,
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.blueAccent),
+              onPressed: _cancelCountdown,
+              icon: const Icon(Icons.close),
+              label: const Text(
+                "MÉGSE",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
             ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProcessingOverlay() {
+    return Container(
+      color: Colors.black54,
+      child: const Center(
+        child: CircularProgressIndicator(color: Colors.blueAccent),
       ),
     );
   }
@@ -733,6 +894,12 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     _imuSub?.cancel();
     _countdownTimer?.cancel();
     WakelockPlus.disable();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 }

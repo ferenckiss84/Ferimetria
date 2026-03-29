@@ -26,6 +26,7 @@ class CameraService {
       selectedCam,
       ResolutionPreset.high,
       enableAudio: true,
+      fps: 30,
     );
 
     await controller!.initialize();
