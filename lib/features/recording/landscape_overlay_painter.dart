@@ -27,23 +27,10 @@ class LandscapeOverlayPainter extends CustomPainter {
     final double cy = size.height * 0.50;
 
     // Sebesség szám
-    _drawText(
-      canvas,
-      speed.round().toString(),
-      Offset(cx, cy - 10),
-      52,
-      FontWeight.bold,
-    );
+    _drawText(canvas, speed.round().toString(), Offset(cx, cy - 10), 52, FontWeight.bold);
 
     // KM/H felirat
-    _drawText(
-      canvas,
-      'KM/H',
-      Offset(cx, cy + 38),
-      13,
-      FontWeight.w500,
-      color: Colors.white.withValues(alpha: 0.6),
-    );
+    _drawText(canvas, 'KM/H', Offset(cx, cy + 38), 13, FontWeight.w500, color: Colors.white.withValues(alpha: 0.6));
   }
 
   // ALUL KÖZÉPEN - vízszintes lean bar
@@ -62,10 +49,7 @@ class LandscapeOverlayPainter extends CustomPainter {
       Rect.fromLTWH(barLeft, barTop, barWidth, barHeight),
       const Radius.circular(11),
     );
-    canvas.drawRRect(
-      bgRRect,
-      Paint()..color = Colors.white.withValues(alpha: 0.12),
-    );
+    canvas.drawRRect(bgRRect, Paint()..color = Colors.white.withValues(alpha: 0.12));
 
     // --- AKTUÁLIS LEAN KITÖLTÉS (középtől jobbra vagy balra) ---
     double lean = leanDeg.clamp(-maxLean, maxLean);
@@ -78,10 +62,7 @@ class LandscapeOverlayPainter extends CustomPainter {
     if (fillWidth > 1) {
       final Color fillColor = _getLeanColor(lean);
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(fillLeft, barTop, fillWidth, barHeight),
-          const Radius.circular(0),
-        ),
+        RRect.fromRectAndRadius(Rect.fromLTWH(fillLeft, barTop, fillWidth, barHeight), const Radius.circular(0)),
         Paint()..color = fillColor.withValues(alpha: 0.75),
       );
     }
@@ -99,25 +80,26 @@ class LandscapeOverlayPainter extends CustomPainter {
 
     // --- MAX LEAN JELÖLŐK (bar végén kívül, piros vonalak) ---
     // Bal max
-    if (maxLeanLeft > 2) {
+    if (maxLeanLeft >= 0) {
       final double maxFractionL = (maxLeanLeft / maxLean).clamp(0.0, 1.0);
       final double maxXL = barCenterX - (barWidth / 2) * maxFractionL;
-      canvas.drawLine(
-        //Offset(maxXL, barTop - 8),
-        //Offset(maxXL, barTop + barHeight + 8),
-        Offset(maxXL, barTop),
-        Offset(maxXL, barTop + barHeight),
-        Paint()
-          ..color = Colors.red.withValues(alpha: 0.9)
-          ..strokeWidth = 2.5
-          ..strokeCap = StrokeCap.round,
-      );
+      if (maxLeanLeft > 0.5) {
+        canvas.drawLine(
+          //Offset(maxXL, barTop - 8),
+          //Offset(maxXL, barTop + barHeight + 8),
+          Offset(maxXL, barTop),
+          Offset(maxXL, barTop + barHeight),
+          Paint()
+            ..color = Colors.red.withValues(alpha: 0.9)
+            ..strokeWidth = 2.5
+            ..strokeCap = StrokeCap.round,
+        );
+      }
       // Max érték szöveg
       _drawText(
         canvas,
         'L ${maxLeanLeft.toStringAsFixed(1)}°',
-        //Offset(maxXL, barTop - 18),
-        Offset(barLeft - 24, barTop + barHeight / 2),
+        Offset(barLeft - 35, barTop + barHeight / 2),
         14,
         FontWeight.bold,
         color: Colors.white.withValues(alpha: 0.9),
@@ -125,40 +107,39 @@ class LandscapeOverlayPainter extends CustomPainter {
     }
 
     // Jobb max
-    if (maxLeanRight > 2) {
+    if (maxLeanRight >= 0) {
       final double maxFractionR = (maxLeanRight / maxLean).clamp(0.0, 1.0);
       final double maxXR = barCenterX + (barWidth / 2) * maxFractionR;
-      canvas.drawLine(
-        //Offset(maxXR, barTop - 8),
-        //Offset(maxXR, barTop + barHeight + 8),
-        Offset(maxXR, barTop),
-        Offset(maxXR, barTop + barHeight),
-        Paint()
-          ..color = Colors.red.withValues(alpha: 0.9)
-          ..strokeWidth = 2.5
-          ..strokeCap = StrokeCap.round,
-      );
+      if (maxLeanRight > 0.5) {
+        canvas.drawLine(
+          //Offset(maxXR, barTop - 8),
+          //Offset(maxXR, barTop + barHeight + 8),
+          Offset(maxXR, barTop),
+          Offset(maxXR, barTop + barHeight),
+          Paint()
+            ..color = Colors.red.withValues(alpha: 0.9)
+            ..strokeWidth = 2.5
+            ..strokeCap = StrokeCap.round,
+        );
+      }
       _drawText(
         canvas,
         'R ${maxLeanRight.toStringAsFixed(1)}°',
-        Offset(barLeft + barWidth + 24, barTop + barHeight / 2),
+        Offset(barLeft + barWidth + 35, barTop + barHeight / 2),
         14,
         FontWeight.bold,
         color: Colors.white.withValues(alpha: 0.9),
       );
     }
 
-    // --- AKTUÁLIS ÉRTÉK SZÖVEG A BAR ALATT ---
+    // --- AKTUÁLIS ÉRTÉK SZÖVEG A BARBAN ---
     final String leanLabel = lean < 0
         ? 'L ${lean.abs().toStringAsFixed(1)}°'
         : lean > 0
         ? 'R ${lean.abs().toStringAsFixed(1)}°'
         : '0.0°';
     final double indicatorX = barCenterX + (barWidth / 2) * leanFraction;
-    final double clampedIndicatorX = indicatorX.clamp(
-      barLeft + 6,
-      barLeft + barWidth - 6,
-    );
+    final double clampedIndicatorX = indicatorX.clamp(barLeft + 6, barLeft + barWidth - 6);
     _drawText(
       canvas,
       leanLabel,
@@ -188,14 +169,7 @@ class LandscapeOverlayPainter extends CustomPainter {
     return Colors.red;
   }
 
-  void _drawText(
-    Canvas canvas,
-    String text,
-    Offset pos,
-    double size,
-    FontWeight weight, {
-    Color color = Colors.white,
-  }) {
+  void _drawText(Canvas canvas, String text, Offset pos, double size, FontWeight weight, {Color color = Colors.white}) {
     final TextPainter tp = TextPainter(
       text: TextSpan(
         text: text,

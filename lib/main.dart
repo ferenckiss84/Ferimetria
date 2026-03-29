@@ -17,10 +17,6 @@ class MotoHUDApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Moto HUD',
-      home: RecordPage(),
-    );
+    return const MaterialApp(debugShowCheckedModeBanner: false, title: 'Moto HUD', home: RecordPage());
   }
 }

@@ -48,7 +48,6 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   Timer? _countdownTimer;
   int _countdownValue = 10;
   int _startDelay = 10;
-  int _displayMode = 0;
   bool _isCountingDown = false;
 
   List<CameraDescription> _backCameras = [];
@@ -58,27 +57,12 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   LatLng _currentLocation = const LatLng(48.09602773224442, 20.759517641576668);
 
   void _animatedMapMove(LatLng destLocation, double destZoom) {
-    final latTween = Tween<double>(
-      begin: _mapController.camera.center.latitude,
-      end: destLocation.latitude,
-    );
-    final lngTween = Tween<double>(
-      begin: _mapController.camera.center.longitude,
-      end: destLocation.longitude,
-    );
-    final zoomTween = Tween<double>(
-      begin: _mapController.camera.zoom,
-      end: destZoom,
-    );
+    final latTween = Tween<double>(begin: _mapController.camera.center.latitude, end: destLocation.latitude);
+    final lngTween = Tween<double>(begin: _mapController.camera.center.longitude, end: destLocation.longitude);
+    final zoomTween = Tween<double>(begin: _mapController.camera.zoom, end: destZoom);
 
-    final controller = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    final animation = CurvedAnimation(
-      parent: controller,
-      curve: Curves.easeInOut,
-    );
+    final controller = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
+    final animation = CurvedAnimation(parent: controller, curve: Curves.easeInOut);
 
     controller.addListener(() {
       _mapController.move(
@@ -88,8 +72,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     });
 
     animation.addStatusListener((status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
+      if (status == AnimationStatus.completed || status == AnimationStatus.dismissed) {
         controller.dispose();
       }
     });
@@ -106,7 +89,6 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     initAll();
   }
 
-  // IMMERSIVE MODE - navigációs sáv elrejtése
   void _setImmersiveMode() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
@@ -115,9 +97,9 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _startDelay = prefs.getInt('startDelay') ?? 10;
-      _displayMode = prefs.getInt('displayMode') ?? 0;
       _selectedCameraIndex = prefs.getInt('selectedCameraIndex') ?? 0;
       _isLandscapeMode = prefs.getBool('isLandscapeMode') ?? false;
+      _imu.isLandscape = _isLandscapeMode;
     });
     _applyOrientation();
   }
@@ -127,7 +109,6 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     await prefs.setInt(key, value);
     setState(() {
       if (key == 'startDelay') _startDelay = value;
-      if (key == 'displayMode') _displayMode = value;
       if (key == 'selectedCameraIndex') _selectedCameraIndex = value;
     });
   }
@@ -136,17 +117,19 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isLandscapeMode', landscape);
     setState(() => _isLandscapeMode = landscape);
+    _imu.isLandscape = landscape;
+    _imu.calibrate();
+    setState(() {
+      _maxLeanLeft = 0.0;
+      _maxLeanRight = 0.0;
+    });
     _applyOrientation();
-    // Immersive mode újra beállítása orientáció váltás után
     Future.delayed(const Duration(milliseconds: 300), _setImmersiveMode);
   }
 
   void _applyOrientation() {
     if (_isLandscapeMode) {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     } else {
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     }
@@ -155,9 +138,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   Future<void> initAll() async {
     try {
       final allCameras = await availableCameras();
-      _backCameras = allCameras
-          .where((cam) => cam.lensDirection == CameraLensDirection.back)
-          .toList();
+      _backCameras = allCameras.where((cam) => cam.lensDirection == CameraLensDirection.back).toList();
       if (_backCameras.isEmpty) _backCameras = allCameras;
       if (_selectedCameraIndex >= _backCameras.length) {
         _selectedCameraIndex = 0;
@@ -179,9 +160,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() {
         gForce = imuData.gForce;
-        // Fekvő módban a roll tengely 90 fokkal el van tolva
-        // ezért a pitch értéket használjuk dőlésszögként
-        lean = _isLandscapeMode ? imuData.x : imuData.roll;
+        lean = imuData.roll;
         final clampedRoll = lean.clamp(-maxLeanAngleLimit, maxLeanAngleLimit);
         if (clampedRoll < -2) {
           _maxLeanLeft = math.max(_maxLeanLeft, clampedRoll.abs());
@@ -226,14 +205,9 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
                 icon = Icons.zoom_out_map;
               }
               return ListTile(
-                leading: Icon(
-                  icon,
-                  color: isSelected ? Colors.blueAccent : Colors.white70,
-                ),
+                leading: Icon(icon, color: isSelected ? Colors.blueAccent : Colors.white70),
                 title: Text(label, style: const TextStyle(color: Colors.white)),
-                trailing: isSelected
-                    ? const Icon(Icons.check_circle, color: Colors.blueAccent)
-                    : null,
+                trailing: isSelected ? const Icon(Icons.check_circle, color: Colors.blueAccent) : null,
                 onTap: () async {
                   Navigator.pop(context);
                   setState(() => camReady = false);
@@ -269,103 +243,118 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
       isProcessing = false;
     });
     if (savedPath != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Videó mentve a Galériába!"),
-          backgroundColor: Colors.green,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Videó mentve a Galériába!"), backgroundColor: Colors.green));
     }
-  }
-
-  void _showDisplayModeDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text(
-          "Kijelző típusa",
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [0, 1].map((mode) {
-            final isSelected = _displayMode == mode;
-            return ListTile(
-              title: Text(
-                mode == 0 ? "Dőlésszög (Default)" : "Sebesség",
-                style: const TextStyle(color: Colors.white),
-              ),
-              trailing: Icon(
-                isSelected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_off,
-                color: isSelected ? Colors.blueAccent : Colors.white30,
-              ),
-              onTap: () {
-                _saveSettings('displayMode', mode);
-                Navigator.pop(context);
-              },
-            );
-          }).toList(),
-        ),
-      ),
-    );
   }
 
   void _showDelayDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text(
-          "Indítási késleltetés",
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [3, 5, 10, 15, 30].map((v) {
-            final isSelected = _startDelay == v;
-            return ListTile(
-              title: Text(
-                "$v másodperc",
-                style: const TextStyle(color: Colors.white),
+      builder: (context) {
+        final screenHeight = MediaQuery.of(context).size.height;
+        final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
+        // A StatefulBuilder kell, hogy a dialogon belül frissüljön a kijelölés (a pötty)
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.grey[900],
+              title: const Text("Indítási késleltetés", style: TextStyle(color: Colors.white)),
+              content: SizedBox(
+                width: double.maxFinite,
+                // Landscape módban korlátozzuk a magasságot, hogy görgethető legyen
+                height: screenHeight * (isLandscape ? 0.5 : 0.4),
+                child: Theme(
+                  data: ThemeData.dark(),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [3, 5, 10, 15, 30].map((v) {
+                      return RadioListTile<int>(
+                        value: v,
+                        groupValue: _startDelay, // Ez a klasszikus paraméter
+                        title: Text("$v másodperc", style: const TextStyle(color: Colors.white)),
+                        activeColor: Colors.blueAccent,
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (int? newValue) {
+                          if (newValue != null) {
+                            // Frissítjük a belső (dialog) állapotot, hogy látszódjon a pötty
+                            setDialogState(() {
+                              _startDelay = newValue;
+                            });
+                            // Mentjük az osztály szintjén is
+                            setState(() {
+                              _startDelay = newValue;
+                            });
+                            _saveSettings('startDelay', newValue);
+
+                            // Várunk egy picit, hogy a felhasználó lássa a kijelölést, aztán bezárjuk
+                            Future.delayed(const Duration(milliseconds: 200), () {
+                              if (Navigator.canPop(context)) Navigator.pop(context);
+                            });
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
               ),
-              trailing: Icon(
-                isSelected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_off,
-                color: isSelected ? Colors.blueAccent : Colors.white30,
-              ),
-              onTap: () {
-                _saveSettings('startDelay', v);
-                Navigator.pop(context);
-              },
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("MÉGSE", style: TextStyle(color: Colors.white54)),
+                ),
+              ],
             );
-          }).toList(),
-        ),
-      ),
+          },
+        );
+      },
     );
   }
 
-  void _startRecordingSequence() {
+  void _startRecordingSequence() async {
     if (isRecordingMode) {
       _stopScreenRecording();
       return;
     }
+
+    // 1. Először csak a visszaszámlálás indul el (nem rögzít semmit)
     setState(() {
       _isCountingDown = true;
       _countdownValue = _startDelay;
     });
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (_countdownValue > 1) {
         setState(() => _countdownValue--);
         HapticFeedback.lightImpact();
       } else {
         timer.cancel();
-        setState(() => _isCountingDown = false);
-        _startScreenRecording();
+        // 2. Amikor lejár a 10 mp, AKKOR hívjuk a rögzítést
         HapticFeedback.heavyImpact();
+
+        setState(() {
+          _isCountingDown = false;
+          isProcessing = true; // Mutatjuk, hogy dolgozunk az ablak feldobásán
+        });
+
+        String getFormattedDate() {
+          final now = DateTime.now();
+          return "${now.year}_${now.month.toString().padLeft(2, '0')}_${now.day.toString().padLeft(2, '0')}_"
+              "${now.hour.toString().padLeft(2, '0')}_${now.minute.toString().padLeft(2, '0')}";
+        }
+
+        String name = "Ferimetria_video_${getFormattedDate()}";
+
+        bool success = await _recordingService.start(name);
+
+        if (mounted) {
+          setState(() {
+            isProcessing = false;
+            isRecordingMode = success;
+          });
+        }
       }
     });
   }
@@ -381,19 +370,14 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    if (!camReady ||
-        _cam.controller == null ||
-        !_cam.controller!.value.isInitialized) {
+    if (!camReady || _cam.controller == null || !_cam.controller!.value.isInitialized) {
       return const Scaffold(
         backgroundColor: Colors.black,
-        body: Center(
-          child: CircularProgressIndicator(color: Colors.blueAccent),
-        ),
+        body: Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
       );
     }
 
     final previewSize = _cam.controller!.value.previewSize!;
-    // Fekvő módban a ratio fordított!
     final double previewRatio = _isLandscapeMode
         ? previewSize.width / previewSize.height
         : previewSize.height / previewSize.width;
@@ -401,9 +385,9 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: Colors.black,
       drawer: _buildDrawer(),
-      body: _isLandscapeMode
-          ? _buildLandscapeBody(previewRatio)
-          : _buildPortraitBody(previewRatio),
+      // Landscape-ben kiterjesztjük a testet a StatusBar mögé is
+      extendBodyBehindAppBar: true,
+      body: _isLandscapeMode ? _buildLandscapeBody(previewRatio) : _buildPortraitBody(previewRatio),
     );
   }
 
@@ -416,18 +400,12 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
           DrawerHeader(
             decoration: const BoxDecoration(
               color: Color(0xFF1A1A1A),
-              border: Border(
-                bottom: BorderSide(color: Colors.blueAccent, width: 2),
-              ),
+              border: Border(bottom: BorderSide(color: Colors.blueAccent, width: 2)),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.motorcycle,
-                  color: Colors.blueAccent,
-                  size: 40,
-                ),
+                const Icon(Icons.motorcycle, color: Colors.blueAccent, size: 40),
                 const SizedBox(height: 10),
                 Text(
                   "FERIMETRIA",
@@ -442,43 +420,8 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
             ),
           ),
           ListTile(
-            leading: Icon(
-              _isLandscapeMode
-                  ? Icons.stay_current_landscape
-                  : Icons.stay_current_portrait,
-              color: Colors.blueAccent,
-            ),
-            title: Text(
-              _isLandscapeMode ? "Váltás: Álló mód" : "Váltás: Fekvő mód",
-              style: const TextStyle(color: Colors.white),
-            ),
-            subtitle: Text(
-              _isLandscapeMode ? "Jelenleg: Fekvő" : "Jelenleg: Álló",
-              style: const TextStyle(color: Colors.white54),
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              _toggleLandscapeMode(!_isLandscapeMode);
-            },
-          ),
-          const Divider(color: Colors.white12),
-          ListTile(
-            leading: const Icon(Icons.dashboard, color: Colors.white),
-            title: const Text(
-              "Kijelző típusa",
-              style: TextStyle(color: Colors.white),
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              _showDisplayModeDialog();
-            },
-          ),
-          ListTile(
             leading: const Icon(Icons.camera_alt, color: Colors.white),
-            title: const Text(
-              "Kamera kiválasztása",
-              style: TextStyle(color: Colors.white),
-            ),
+            title: const Text("Kamera kiválasztása", style: TextStyle(color: Colors.white)),
             subtitle: Text(
               "${_selectedCameraIndex + 1}/${_backCameras.length}",
               style: const TextStyle(color: Colors.white70),
@@ -491,24 +434,10 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
           ListTile(
             leading: const Icon(Icons.timer, color: Colors.white),
             title: const Text("Időzítő", style: TextStyle(color: Colors.white)),
-            subtitle: Text(
-              "$_startDelay mp",
-              style: const TextStyle(color: Colors.white70),
-            ),
+            subtitle: Text("$_startDelay mp", style: const TextStyle(color: Colors.white70)),
             onTap: () {
               Navigator.pop(context);
               _showDelayDialog();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.fiber_manual_record, color: Colors.red),
-            title: const Text(
-              "Felvétel indítása",
-              style: TextStyle(color: Colors.white),
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              _startRecordingSequence();
             },
           ),
         ],
@@ -520,10 +449,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
     return Stack(
       children: [
         Center(
-          child: AspectRatio(
-            aspectRatio: previewRatio,
-            child: CameraPreview(_cam.controller!),
-          ),
+          child: AspectRatio(aspectRatio: previewRatio, child: CameraPreview(_cam.controller!)),
         ),
         Positioned(
           top: -50,
@@ -535,11 +461,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.9),
-                  Colors.black.withValues(alpha: 0.5),
-                  Colors.transparent,
-                ],
+                colors: [Colors.black.withValues(alpha: 0.9), Colors.black.withValues(alpha: 0.5), Colors.transparent],
               ),
             ),
           ),
@@ -561,21 +483,11 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
                   leanDeg: lean,
                   maxLeanLeft: _maxLeanLeft,
                   maxLeanRight: _maxLeanRight,
-                  displayMode: _displayMode,
                 ),
               );
             },
           ),
         ),
-        /* if (isRecordingMode)
-          Positioned(
-            right: 15,
-            bottom: (MediaQuery.of(context).size.height * 0.7) / 2 + 10,
-            child: GestureDetector(
-              onTap: _stopScreenRecording,
-              child: _buildStopButton(),
-            ),
-          ), */
         Positioned(
           right: 15,
           top: 0,
@@ -583,9 +495,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
           child: Center(
             child: GestureDetector(
               onTap: _startRecordingSequence,
-              child: isRecordingMode
-                  ? _buildStopButton()
-                  : _buildRecordButton(),
+              child: isRecordingMode ? _buildStopButton() : _buildRecordButton(),
             ),
           ),
         ),
@@ -602,14 +512,22 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
           ),
         ),
         Positioned(
-          top: 34,
+          top: 25,
           left: 0,
           right: 0,
           child: Center(
-            child: Icon(
-              _hasGpsSignal ? Icons.gps_fixed : Icons.gps_off,
-              color: _hasGpsSignal ? Colors.greenAccent : Colors.white30,
-              size: 30,
+            child: FloatingActionButton(
+              mini: true,
+              elevation: 0,
+              hoverElevation: 0,
+              highlightElevation: 0,
+              backgroundColor: Colors.transparent,
+              heroTag: "toggle_orient_portrait",
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                _toggleLandscapeMode(!_isLandscapeMode);
+              },
+              child: Icon(Icons.screen_rotation_rounded, color: Colors.white),
             ),
           ),
         ),
@@ -618,8 +536,11 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
           right: 15,
           child: FloatingActionButton(
             mini: true,
+            elevation: 0,
+            hoverElevation: 0,
+            highlightElevation: 0,
+            backgroundColor: Colors.transparent,
             heroTag: "reset_vals_portrait",
-            backgroundColor: Colors.black45,
             onPressed: () {
               HapticFeedback.mediumImpact();
               _imu.calibrate();
@@ -641,37 +562,34 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
   Widget _buildLandscapeBody(double previewRatio) {
     return Stack(
       children: [
-        // Kamera preview - teljes képernyő fekvő módban
         Positioned.fill(
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _cam.controller!.value.previewSize!.width,
-              height: _cam.controller!.value.previewSize!.height,
-              child: CameraPreview(_cam.controller!),
+          child: Container(
+            color: Colors.black,
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _cam.controller!.value.previewSize!.width,
+                height: _cam.controller!.value.previewSize!.height,
+                child: CameraPreview(_cam.controller!),
+              ),
             ),
           ),
         ),
-        // Felső gradient
         Positioned(
           top: 0,
           left: 0,
           right: 0,
-          height: 80,
+          height: 60,
           child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.85),
-                  Colors.transparent,
-                ],
+                colors: [Colors.black.withValues(alpha: 0.7), Colors.transparent],
               ),
             ),
           ),
         ),
-        // Landscape HUD overlay
         Positioned.fill(
           child: TweenAnimationBuilder<double>(
             tween: Tween<double>(begin: 0, end: _currentSpeed),
@@ -689,7 +607,6 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
             },
           ),
         ),
-        // BAL FELSŐ - menü gomb
         Positioned(
           top: 10,
           left: 10,
@@ -700,24 +617,16 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
             ),
           ),
         ),
-        // GPS ikon
-        Positioned(
-          top: 18,
-          left: 60,
-          child: Icon(
-            _hasGpsSignal ? Icons.gps_fixed : Icons.gps_off,
-            color: _hasGpsSignal ? Colors.greenAccent : Colors.white30,
-            size: 24,
-          ),
-        ),
-        // Reset gomb
         Positioned(
           top: 10,
-          left: 100,
+          right: 15,
           child: FloatingActionButton(
             mini: true,
+            elevation: 0,
+            hoverElevation: 0,
+            highlightElevation: 0,
+            backgroundColor: Colors.transparent,
             heroTag: "reset_vals_landscape",
-            backgroundColor: Colors.black45,
             onPressed: () {
               HapticFeedback.mediumImpact();
               _imu.calibrate();
@@ -726,23 +635,36 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
                 _maxLeanRight = 0.0;
               });
             },
-            child: const Icon(Icons.refresh, color: Colors.white, size: 18),
+            child: const Icon(Icons.refresh, color: Colors.white),
           ),
         ),
-        // JOBB FENT - térkép
-        Positioned(top: 10, right: 10, child: _buildMapWidget()),
-        // JOBB OLDALT KÖZÉPEN - record / stop gomb
         Positioned(
-          right: 15,
-          top: 0,
-          bottom: 0,
+          top: 10,
+          left: 0,
+          right: 0,
           child: Center(
-            child: GestureDetector(
-              onTap: _startRecordingSequence,
-              child: isRecordingMode
-                  ? _buildStopButton()
-                  : _buildRecordButton(),
+            child: FloatingActionButton(
+              mini: true,
+              elevation: 0,
+              hoverElevation: 0,
+              highlightElevation: 0,
+              backgroundColor: Colors.transparent,
+              heroTag: "toggle_orient_landscape",
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                _toggleLandscapeMode(!_isLandscapeMode);
+              },
+              child: Icon(Icons.screen_rotation_rounded, color: Colors.white),
             ),
+          ),
+        ),
+        Positioned(top: 50, right: 5, child: _buildMapWidget()),
+        Positioned(
+          right: 20,
+          bottom: 20,
+          child: GestureDetector(
+            onTap: _startRecordingSequence,
+            child: isRecordingMode ? _buildStopButton() : _buildRecordButton(),
           ),
         ),
         if (_isCountingDown) _buildCountdownOverlay(),
@@ -766,10 +688,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
           ClipOval(
             child: FlutterMap(
               mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _currentLocation,
-                initialZoom: 15.0,
-              ),
+              options: MapOptions(initialCenter: _currentLocation, initialZoom: 15.0),
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -785,9 +704,7 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
               color: Colors.red,
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 1.5),
-              boxShadow: const [
-                BoxShadow(color: Colors.black54, blurRadius: 4),
-              ],
+              boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 4)],
             ),
           ),
         ],
@@ -802,13 +719,8 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.white.withValues(alpha: 0.15),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.4),
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
-        ],
+        border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 2),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8)],
       ),
       child: const Icon(Icons.stop, color: Colors.white, size: 35),
     );
@@ -822,69 +734,89 @@ class _RecordPageState extends State<RecordPage> with TickerProviderStateMixin {
         shape: BoxShape.circle,
         color: Colors.red.withValues(alpha: 0.20),
         border: Border.all(color: Colors.red.withValues(alpha: 0.6), width: 2),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8)],
       ),
       child: const Icon(Icons.fiber_manual_record, color: Colors.red, size: 35),
     );
   }
 
   Widget _buildCountdownOverlay() {
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Container(
       color: Colors.black87,
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: isLandscape
+            ? _buildLandscapeCountdown() // Ha fektetve van
+            : _buildPortraitCountdown(), // Ha állítva van
+      ),
+    );
+  }
+
+  // ÁLLÓ ELRENDEZÉS (Eredeti oszlopos)
+  Widget _buildPortraitCountdown() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text("INDÍTÁS", style: TextStyle(color: Colors.white70, fontSize: 24, letterSpacing: 4)),
+        Text(
+          "$_countdownValue",
+          style: const TextStyle(color: Colors.white, fontSize: 160, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 40),
+        _buildCancelButton(),
+      ],
+    );
+  }
+
+  // FEKTETETT ELRENDEZÉS (Egymás mellett)
+  Widget _buildLandscapeCountdown() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Bal oldal: Felirat + A nagy szám egymás alatt
+        Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "INDÍTÁS",
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 24,
-                letterSpacing: 4,
-              ),
-            ),
+            const Text("INDÍTÁS", style: TextStyle(color: Colors.white70, fontSize: 20, letterSpacing: 4)),
             Text(
               "$_countdownValue",
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 160,
                 fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 40),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 30,
-                  vertical: 15,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
-              ),
-              onPressed: _cancelCountdown,
-              icon: const Icon(Icons.close),
-              label: const Text(
-                "MÉGSE",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                height: 1.1, // Szorosabb illeszkedés
               ),
             ),
           ],
         ),
+        const SizedBox(width: 80), // Jó nagy hely a szám és a gomb között
+        // Jobb oldal: Csak a gomb
+        _buildCancelButton(),
+      ],
+    );
+  }
+
+  // Közös gomb widget, hogy ne kelljen kétszer megírni
+  Widget _buildCancelButton() {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.redAccent,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
       ),
+      onPressed: _cancelCountdown,
+      icon: const Icon(Icons.close),
+      label: const Text("MÉGSE", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
     );
   }
 
   Widget _buildProcessingOverlay() {
     return Container(
       color: Colors.black54,
-      child: const Center(
-        child: CircularProgressIndicator(color: Colors.blueAccent),
-      ),
+      child: const Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
     );
   }
 

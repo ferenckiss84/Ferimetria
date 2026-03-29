@@ -1,101 +1,61 @@
-import 'dart:async'; // Késleltetett műveletek és adatfolyamok (Stream) kezelése
-import 'dart:math'
-    as math; // Matematikai számításokhoz (gyökvonás, tangens, pi)
-import 'package:sensors_plus/sensors_plus.dart'; // A telefon fizikai szenzorait (gyorsulásmérő, giroszkóp) elérő könyvtár
+import 'dart:async';
+import 'dart:math' as math;
+import 'package:sensors_plus/sensors_plus.dart';
 
 class IMUData {
-  // Egy egyedi adatosztály a szenzoradatok csomagolásához
-  final double x, y, z, gForce, roll; // Koordináták, eredő erő és dőlésszög
-  final double
-  speed; // Opcionális sebesség mező (a record_page kompatibilitás miatt)
+  final double x, y, z, gForce, roll;
 
-  IMUData({
-    // Konstruktor az adatok inicializálásához
-    required this.x,
-    required this.y,
-    required this.z,
-    required this.gForce,
-    required this.roll,
-    this.speed = 0.0,
-  });
+  IMUData({required this.x, required this.y, required this.z, required this.gForce, required this.roll});
 }
 
 class IMUService {
-  // A szenzorokat kezelő szerviz osztály
-  StreamSubscription? _accSub; // Előfizetés a gyorsulásmérőre
-  StreamSubscription? _gyroSub; // Előfizetés a giroszkópra
-  final _controller =
-      StreamController<
-        IMUData
-      >.broadcast(); // Adatfolyam vezérlő, amely több hallgatót is kiszolgál
-  Stream<IMUData> get stream =>
-      _controller.stream; // Nyilvános elérés az adatokhoz
+  StreamSubscription? _accSub;
+  StreamSubscription? _gyroSub;
+  final _controller = StreamController<IMUData>.broadcast();
+  Stream<IMUData> get stream => _controller.stream;
 
-  double _roll = 0.0; // Aktuális dőlésszög tárolása fokban
-  double _lastTs = 0.0; // Az utolsó mérés időbélyege a pontos integráláshoz
-  double lastTotalAccel =
-      9.81; // Alapértelmezett földi gravitációs gyorsulás (m/s²)
+  double _roll = 0.0;
+  double _lastTs = 0.0;
+  bool isLandscape = false;
 
   void start() {
-    // Szenzorfigyelés elindítása
-    // GIROSZKÓP: A szögsebességet méri (mennyire gyorsan fordul el a telefon)
     _gyroSub = gyroscopeEventStream().listen((GyroscopeEvent e) {
-      // Feliratkozás az eseményekre
-      final now =
-          DateTime.now().microsecondsSinceEpoch /
-          1000000.0; // Aktuális idő másodpercben
+      final now = DateTime.now().microsecondsSinceEpoch / 1000000.0;
       if (_lastTs != 0) {
-        // Ha már van korábbi időpontunk
-        double dt = now - _lastTs; // Eltelt idő kiszámítása (delta time)
-        // Z tengely menti szögsebesség integrálása: fok = fok + (szögsebesség * idő)
-        // A giroszkóp radiánt ad, ezt váltjuk át fokra (180 / pi)
-        _roll += (e.z * 180 / math.pi) * dt;
+        double dt = now - _lastTs;
+        double gyroAxis = isLandscape ? e.x : e.z;
+        _roll += (gyroAxis * 180 / math.pi) * dt;
       }
-      _lastTs = now; // Időbélyeg frissítése
+      _lastTs = now;
     });
 
-    // GYORSULÁSMÉRŐ: A lineáris gyorsulást és a gravitációt méri
     _accSub = accelerometerEventStream().listen((AccelerometerEvent e) {
-      // Feliratkozás
-      // Pythagoras-tétellel kiszámoljuk az eredő gyorsulást (vektorhossz)
       double totalG = math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
-      lastTotalAccel = totalG; // Érték elmentése
 
-      // Dőlésszög számítása tisztán a gravitáció iránya alapján
-      // Ez segít korrigálni a giroszkóp természetes "elmászását" (drift)
-      double accRoll =
-          math.atan2(e.x, math.sqrt(e.y * e.y + e.z * e.z)) * 180 / math.pi;
-
-      // KOMPLEMENTER SZŰRŐ: Ötvözzük a két szenzor előnyeit
-      // A giroszkóp rövid távon pontos, az akcelerométer hosszú távon stabil.
-      // Csak akkor korrigálunk, ha a telefon nem rázkódik túlságosan (8.0 és 12.0 m/s² között).
-      if (totalG > 8.0 && totalG < 12.0) {
-        _roll =
-            (0.96 * _roll) +
-            (0.04 * accRoll); // 96% giroszkóp, 4% akcelerométer súlyozás
+      double accRoll;
+      if (isLandscape) {
+        double stability = math.sqrt(math.max(0, totalG * totalG - e.y * e.y));
+        accRoll = math.atan2(e.y, stability) * 180 / math.pi;
+      } else {
+        double stability = math.sqrt(math.max(0, totalG * totalG - e.x * e.x));
+        accRoll = math.atan2(e.x, stability) * 180 / math.pi;
       }
 
-      // Az adatok becsomagolása és küldése a kezelőfelület felé
-      _controller.add(
-        IMUData(
-          x: e.x,
-          y: e.y,
-          z: e.z,
-          gForce: totalG / 9.81, // G-erővé alakítás (1.0 = nyugalmi helyzet)
-          roll: _roll, // Szűrt dőlésszög
-        ),
-      );
+      if (totalG > 8.0 && totalG < 12.0) {
+        _roll = (0.96 * _roll) + (0.04 * accRoll);
+      }
+
+      _controller.add(IMUData(x: e.x, y: e.y, z: e.z, gForce: totalG / 9.81, roll: _roll));
     });
   }
 
   void calibrate() {
-    // Kalibrációs funkció (pl. ha vízszintesen áll a motor)
-    _roll = 0; // Alaphelyzetbe állítjuk a dőlésszöget
+    _roll = 0;
   }
 
   void stop() {
-    // Szenzorok leállítása (erőforrás-takarékosság)
-    _accSub?.cancel(); // Gyorsulásmérő lekapcsolása
-    _gyroSub?.cancel(); // Giroszkóp lekapcsolása
+    _accSub?.cancel();
+    _gyroSub?.cancel();
+    _lastTs = 0;
   }
 }
