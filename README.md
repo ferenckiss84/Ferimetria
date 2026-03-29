@@ -1,6 +1,11 @@
 # 🏍️ v1.1
 
 - **Fekvő mód:** Új fekvő UI.
+- **Felvétel gomb:** Álló módban is megjelenik a főképernyőn, hogy ne kelljen menüből indítani.
+- **Hibajavítások:** 
+    * Térképjelölő fixen középen van az ugráló helyett.
+    * Sebességkijelző logika frissítve, hogy ne laggoljon és ne adjon hibás értékeket.
+    * Hullámos kép a felvételkor. Beállítások módosítva (fix 30 fps sync).
 
 # 🏍️ v1.0
 
