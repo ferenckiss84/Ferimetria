@@ -49,7 +49,7 @@ Az alkalmazás a legfrissebb Flutter keretrendszerrel készült, kihasználva a 
 
 Ha szeretnéd saját magadnak buildelni az appot:
 
-1. **Klónozd a repositoryt:**
+1. Klónozd a repositoryt:
    ```bash
    git clone https://github.com/ferenckiss84/Ferimetria.git
 
